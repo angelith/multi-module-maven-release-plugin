@@ -6,6 +6,7 @@ import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
+import org.apache.maven.project.MavenProject;
 import org.apache.maven.settings.io.DefaultSettingsWriter;
 import org.eclipse.jgit.api.errors.GitAPIException;
 
@@ -14,7 +15,9 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import static java.util.Arrays.asList;
 
@@ -71,7 +74,7 @@ public class ReleaseMojo extends BaseMojo {
      */
     @Parameter(alias = "skipTests", defaultValue = "false", property = "skipTests")
     private boolean skipTests;
-    
+
 	/**
 	 * Specifies a custom, user specific Maven settings file to be used during the release build.
      *
@@ -91,13 +94,13 @@ public class ReleaseMojo extends BaseMojo {
      */
 	@Parameter(alias = "globalSettings")
 	private File globalSettings;
-        
+
     /**
      * Push tags to remote repository as they are created.
      */
     @Parameter(alias = "pushTags", defaultValue="true", property="push")
     private boolean pushTags;
-    
+
 
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {
@@ -106,8 +109,9 @@ public class ReleaseMojo extends BaseMojo {
         try {
             configureJsch(log);
 
-
-            LocalGitRepo repo = LocalGitRepo.fromCurrentDir(getRemoteUrlOrNullIfNoneSet(project.getOriginalModel().getScm(), project.getModel().getScm()));
+            LocalGitRepo repo;
+            //Current project repo -> Parent
+            repo = LocalGitRepo.fromCurrentDir(getRemoteUrlOrNullIfNoneSet(project.getOriginalModel().getScm(), project.getModel().getScm()));
             repo.errorIfNotClean();
 
             Reactor reactor = Reactor.fromProjects(log, repo, project, projects, buildNumber, modulesToForceRelease, noChangesAction);
@@ -115,36 +119,46 @@ public class ReleaseMojo extends BaseMojo {
                 return;
             }
 
-            List<AnnotatedTag> proposedTags = figureOutTagNamesAndThrowIfAlreadyExists(reactor.getModulesInBuildOrder(), repo, modulesToRelease);
-
-            List<File> changedFiles = updatePomsAndReturnChangedFiles(log, repo, reactor);
-
-            // Do this before running the maven build in case the build uploads some artifacts and then fails. If it is
-            // not tagged in a half-failed build, then subsequent releases will re-use a version that is already in Nexus
-            // and so fail. The downside is that failed builds result in tags being pushed.
-            tagAndPushRepo(log, repo, proposedTags);
-
-            try {
-            	final ReleaseInvoker invoker = new ReleaseInvoker(getLog(), project);
-            	invoker.setGlobalSettings(globalSettings);
-                if (userSettings != null) {
-                    invoker.setUserSettings(userSettings);
-                } else if (getSettings() != null) {
-                    File settingsFile = File.createTempFile("tmp", ".xml");
-                    settingsFile.deleteOnExit();
-                    new DefaultSettingsWriter().write(settingsFile, null, getSettings());
-                    invoker.setUserSettings(settingsFile);
-                }
-            	invoker.setGoals(goals);
-            	invoker.setModulesToRelease(modulesToRelease);
-            	invoker.setReleaseProfiles(releaseProfiles);
-            	invoker.setSkipTests(skipTests);
-                invoker.runMavenBuild(reactor);
-                revertChanges(log, repo, changedFiles, true); // throw if you can't revert as that is the root problem
-            } finally {
-                revertChanges(log, repo, changedFiles, false); // warn if you can't revert but keep throwing the original exception so the root cause isn't lost
+            //Modules
+            final List<LocalGitRepo> modulesRepos = new ArrayList<>(3);
+            for(MavenProject moduleProject:projects){
+                repo = LocalGitRepo.fromCurrentDir(getRemoteUrlOrNullIfNoneSet(moduleProject.getOriginalModel().getScm(), moduleProject.getModel().getScm()));
+                repo.errorIfNotClean();
+                modulesRepos.add(repo);
             }
 
+            List<File> changedFiles;
+            for(LocalGitRepo moduleRepo: modulesRepos){
+                changedFiles = updatePomsAndReturnChangedFiles(log, moduleRepo, reactor);
+
+                // Do this before running the maven build in case the build uploads some artifacts and then fails. If it is
+                // not tagged in a half-failed build, then subsequent releases will re-use a version that is already in Nexus
+                // and so fail. The downside is that failed builds result in tags being pushed.
+
+                tagAndPushRepo(log, moduleRepo, figureOutTagNamesAndThrowIfAlreadyExists(reactor.getModulesInBuildOrder(), moduleRepo, modulesToRelease));
+
+
+                try {
+                    final ReleaseInvoker invoker = new ReleaseInvoker(getLog(), project);
+                    invoker.setGlobalSettings(globalSettings);
+                    if (userSettings != null) {
+                        invoker.setUserSettings(userSettings);
+                    } else if (getSettings() != null) {
+                        File settingsFile = File.createTempFile("tmp", ".xml");
+                        settingsFile.deleteOnExit();
+                        new DefaultSettingsWriter().write(settingsFile, null, getSettings());
+                        invoker.setUserSettings(settingsFile);
+                    }
+                    invoker.setGoals(goals);
+                    invoker.setModulesToRelease(modulesToRelease);
+                    invoker.setReleaseProfiles(releaseProfiles);
+                    invoker.setSkipTests(skipTests);
+                    invoker.runMavenBuild(reactor);
+                    revertChanges(log, moduleRepo, changedFiles, true); // throw if you can't revert as that is the root problem
+                } finally {
+                    revertChanges(log, moduleRepo, changedFiles, false); // warn if you can't revert but keep throwing the original exception so the root cause isn't lost
+                }
+            }
 
         } catch (ValidationException e) {
             printBigErrorMessageAndThrow(log, e.getMessage(), e.getMessages());
