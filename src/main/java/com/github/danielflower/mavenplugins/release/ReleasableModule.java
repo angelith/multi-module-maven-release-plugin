@@ -11,13 +11,19 @@ public class ReleasableModule {
     private final String tagName;
     private final String equivalentVersion;
     private final String relativePathToModule;
+    private final LocalGitRepo git;
 
-    public ReleasableModule(MavenProject project, VersionName version, String equivalentVersion, String relativePathToModule) {
+    public ReleasableModule(MavenProject project, VersionName version, String equivalentVersion, String relativePathToModule, LocalGitRepo git) {
         this.project = project;
         this.version = version;
         this.equivalentVersion = equivalentVersion;
         this.relativePathToModule = relativePathToModule;
         this.tagName = project.getArtifactId() + "-" + version.releaseVersion();
+        this.git = git;
+    }
+
+    public LocalGitRepo getGit() {
+        return git;
     }
 
     public String getTagName() {
@@ -71,6 +77,6 @@ public class ReleasableModule {
     }
 
     public ReleasableModule createReleasableVersion() {
-        return new ReleasableModule(project, version, null, relativePathToModule);
+        return new ReleasableModule(project, version, null, relativePathToModule, git);
     }
 }

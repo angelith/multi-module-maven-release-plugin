@@ -74,11 +74,30 @@ public class LocalGitRepo {
         for (File changedFile : changedFiles) {
             try {
                 String pathRelativeToWorkingTree = Repository.stripWorkDir(workTree, changedFile);
+                System.out.println("Trying to revert: " + pathRelativeToWorkingTree + " for repo " + git.getRepository().getDirectory().getCanonicalPath());
                 git.checkout().addPath(pathRelativeToWorkingTree).call();
             } catch (Exception e) {
                 hasErrors = true;
                 log.error("Unable to revert changes to " + changedFile + " - you may need to manually revert this file. Error was: " + e.getMessage());
             }
+        }
+        hasReverted = true;
+        return !hasErrors;
+    }
+
+    public boolean revertMultiRepoChanges(Log log, ModuleInfo moduleInfo) throws MojoExecutionException {
+        boolean hasErrors = false;
+
+        if (moduleInfo.getHasReverted()) {
+            return true;
+        } else {
+            try {
+                git.checkout().addPath(moduleInfo.getRelativePath() + moduleInfo.getChangedPom().getCanonicalPath()).call();
+            } catch (Exception e) {
+                hasErrors = true;
+                log.error("Unable to revert changes to " + moduleInfo.getChangedPom().getName() + " - you may need to manually revert this file. Error was: " + e.getMessage());
+            }
+
         }
         hasReverted = true;
         return !hasErrors;
@@ -119,9 +138,9 @@ public class LocalGitRepo {
      * @param remoteUrl The value in pom.scm.connection or null if none specified, in which case the default remote is used.
      * @throws ValidationException if anything goes wrong
      */
-    public static LocalGitRepo fromCurrentDir(String remoteUrl) throws ValidationException {
+    public static LocalGitRepo fromCurrentDir(String remoteUrl, String moduleName) throws ValidationException {
         Git git;
-        File gitDir = new File(".");
+        File gitDir = new File("../" + moduleName);
         try {
             git = Git.open(gitDir);
         } catch (RepositoryNotFoundException rnfe) {
@@ -154,6 +173,21 @@ public class LocalGitRepo {
             candidateDir = candidateDir.getParentFile();
         }
         return null;
+    }
+
+    public List<String> remoteTagsFrom(AnnotatedTag annotatedTag) throws GitAPIException {
+        return getRemoteTags(annotatedTag.name());
+    }
+
+    public List<String> getRemoteTags(String tagNameToSearchFor) throws GitAPIException {
+        List<String> results = new ArrayList<>();
+        Collection<Ref> remoteTags = allRemoteTags();
+        for (Ref remoteTag : remoteTags) {
+            if (remoteTag.getName().equals("refs/tags/" + tagNameToSearchFor)) {
+                results.add(tagNameToSearchFor);
+            }
+        }
+        return results;
     }
 
     public List<String> remoteTagsFrom(List<AnnotatedTag> annotatedTags) throws GitAPIException {

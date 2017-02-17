@@ -6,35 +6,39 @@ import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.project.MavenProject;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.lib.Ref;
-import org.eclipse.jgit.lib.Repository;
 
-import java.io.File;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
-public class Reactor {
+/**
+ * Created by id848421 on 15/02/2017.
+ */
+public class MultiRepoReactor {
 
     private final List<ReleasableModule> modulesInBuildOrder;
+    private final List<ModuleInfo> moduleInfos;
 
-    public Reactor(List<ReleasableModule> modulesInBuildOrder) {
+    public MultiRepoReactor(List<ReleasableModule> modulesInBuildOrder, List<ModuleInfo> moduleInfos) {
         this.modulesInBuildOrder = modulesInBuildOrder;
+        this.moduleInfos = moduleInfos;
     }
 
     public List<ReleasableModule> getModulesInBuildOrder() {
         return modulesInBuildOrder;
     }
 
-    public static Reactor fromProjects(Log log, LocalGitRepo gitRepo, MavenProject rootProject, List<MavenProject> projects, Long buildNumber, List<String> modulesToForceRelease, NoChangesAction actionWhenNoChangesDetected) throws ValidationException, GitAPIException, MojoExecutionException {
-        DiffDetector detector = new TreeWalkingDiffDetector(gitRepo.git.getRepository());
+    public List<ModuleInfo> getModuleInfos() { return moduleInfos; }
+
+    public static MultiRepoReactor fromProjects(Log log, MavenProject rootProject, List<ModuleInfo> moduleInfos, Long buildNumber, List<String> modulesToForceRelease, NoChangesAction actionWhenNoChangesDetected) throws ValidationException, GitAPIException, MojoExecutionException {
+
         List<ReleasableModule> modules = new ArrayList<ReleasableModule>();
         VersionNamer versionNamer = new VersionNamer();
-        for (MavenProject project : projects) {
-            String relativePathToModule = calculateModulePath(rootProject, project);
-            String artifactId = project.getArtifactId();
-            String versionWithoutBuildNumber = project.getVersion().replace("-SNAPSHOT", "");
-            List<AnnotatedTag> previousTagsForThisModule = AnnotatedTagFinder.tagsForVersion(gitRepo.git, artifactId, versionWithoutBuildNumber);
+        for (ModuleInfo moduleInfo : moduleInfos) {
+            DiffDetector detector = new MultiRepoTreeWalkingDiffDetector(moduleInfo.getGitRepo().git.getRepository());
+            String artifactId = moduleInfo.getMavenProject().getArtifactId();
+            String versionWithoutBuildNumber = moduleInfo.getMavenProject().getVersion().replace("-SNAPSHOT", "");
+            List<AnnotatedTag> previousTagsForThisModule = AnnotatedTagFinder.tagsForVersion(moduleInfo.getGitRepo().git, artifactId, versionWithoutBuildNumber);
 
 
             Collection<Long> previousBuildNumbers = new ArrayList<Long>();
@@ -44,26 +48,26 @@ public class Reactor {
                 }
             }
 
-            Collection<Long> remoteBuildNumbers = getRemoteBuildNumbers(gitRepo, artifactId, versionWithoutBuildNumber);
+            Collection<Long> remoteBuildNumbers = getRemoteBuildNumbers(moduleInfo.getGitRepo(), artifactId, versionWithoutBuildNumber);
             previousBuildNumbers.addAll(remoteBuildNumbers);
 
-            VersionName newVersion = versionNamer.name(project.getVersion(), buildNumber, previousBuildNumbers);
+            VersionName newVersion = versionNamer.name(moduleInfo.getMavenProject().getVersion(), buildNumber, previousBuildNumbers);
 
             boolean oneOfTheDependenciesHasChanged = false;
             String changedDependency = null;
             for (ReleasableModule module : modules) {
                 if (module.willBeReleased()) {
-                    for (Dependency dependency : project.getModel().getDependencies()) {
+                    for (Dependency dependency : moduleInfo.getMavenProject().getModel().getDependencies()) {
                         if (dependency.getGroupId().equals(module.getGroupId()) && dependency.getArtifactId().equals(module.getArtifactId())) {
                             oneOfTheDependenciesHasChanged = true;
                             changedDependency = dependency.getArtifactId();
                             break;
                         }
                     }
-                    if (project.getParent() != null
-                            && (project.getParent().getGroupId().equals(module.getGroupId()) && project.getParent().getArtifactId().equals(module.getArtifactId()))) {
+                    if (moduleInfo.getMavenProject().getParent() != null
+                        && (moduleInfo.getMavenProject().getParent().getGroupId().equals(module.getGroupId()) && moduleInfo.getMavenProject().getParent().getArtifactId().equals(module.getArtifactId()))) {
                         oneOfTheDependenciesHasChanged = true;
-                        changedDependency = project.getParent().getArtifactId();
+                        changedDependency = moduleInfo.getMavenProject().getParent().getArtifactId();
                         break;
                     }
                 }
@@ -79,7 +83,11 @@ public class Reactor {
             }else if (oneOfTheDependenciesHasChanged) {
                 log.info("Releasing " + artifactId + " " + newVersion.releaseVersion() + " as " + changedDependency + " has changed.");
             } else {
-                AnnotatedTag previousTagThatIsTheSameAsHEADForThisModule = hasChangedSinceLastRelease(previousTagsForThisModule, detector, project, relativePathToModule);
+                String relativePath = moduleInfo.getRelativePath();
+                if(moduleInfo.getMavenProject().getArtifactId().contentEquals(rootProject.getArtifactId())){
+                    relativePath = ".";
+                }
+                AnnotatedTag previousTagThatIsTheSameAsHEADForThisModule = hasChangedSinceLastRelease(previousTagsForThisModule, detector, moduleInfo.getMavenProject(), relativePath);
                 if (previousTagThatIsTheSameAsHEADForThisModule != null) {
                     equivalentVersion = previousTagThatIsTheSameAsHEADForThisModule.version() + "." + previousTagThatIsTheSameAsHEADForThisModule.buildNumber();
                     log.info("Will use version " + equivalentVersion + " for " + artifactId + " as it has not been changed since that release.");
@@ -87,7 +95,7 @@ public class Reactor {
                     log.info("Will use version " + newVersion.releaseVersion() + " for " + artifactId + " as it has changed since the last release.");
                 }
             }
-            ReleasableModule module = new ReleasableModule(project, newVersion, equivalentVersion, relativePathToModule, gitRepo);
+            ReleasableModule module = new ReleasableModule(moduleInfo.getMavenProject(), newVersion, equivalentVersion, moduleInfo.getRelativePath(), moduleInfo.getGitRepo());
             modules.add(module);
         }
 
@@ -108,7 +116,7 @@ public class Reactor {
             }
         }
 
-        return new Reactor(modules);
+        return new MultiRepoReactor(modules, moduleInfos);
     }
 
     private static Collection<Long> getRemoteBuildNumbers(LocalGitRepo gitRepo, String artifactId, String versionWithoutBuildNumber) throws GitAPIException {
@@ -132,23 +140,6 @@ public class Reactor {
             }
         }
         return false;
-    }
-
-    private static String calculateModulePath(MavenProject rootProject, MavenProject project) throws MojoExecutionException {
-        // Getting canonical files because on Windows, it's possible one returns "C:\..." and the other "c:\..." which is rather amazing
-        File projectRoot;
-        File moduleRoot;
-        try {
-            projectRoot = rootProject.getBasedir().getCanonicalFile();
-            moduleRoot = project.getBasedir().getCanonicalFile();
-        } catch (IOException e) {
-            throw new MojoExecutionException("Could not find directory paths for maven project", e);
-        }
-        String relativePathToModule = Repository.stripWorkDir(projectRoot, moduleRoot);
-        if (relativePathToModule.length() == 0) {
-            relativePathToModule = ".";
-        }
-        return relativePathToModule;
     }
 
     static AnnotatedTag hasChangedSinceLastRelease(List<AnnotatedTag> previousTagsForThisModule, DiffDetector detector, MavenProject project, String relativePathToModule) throws MojoExecutionException {
