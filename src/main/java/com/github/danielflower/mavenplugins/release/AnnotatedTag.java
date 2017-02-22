@@ -1,5 +1,6 @@
 package com.github.danielflower.mavenplugins.release;
 
+import com.sun.org.apache.xpath.internal.operations.Bool;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.errors.IncorrectObjectTypeException;
@@ -28,14 +29,16 @@ public class AnnotatedTag {
         this.message = message;
     }
 
-    public static AnnotatedTag create(String name, String version, long buildNumber) {
+    public static AnnotatedTag create(String name, String version, long buildNumber, Boolean useBuildNumber) {
         JSONObject message = new JSONObject();
         message.put(VERSION, version);
-        message.put(BUILD_NUMBER, String.valueOf(buildNumber));
+        if(useBuildNumber){
+            message.put(BUILD_NUMBER, String.valueOf(buildNumber));
+        }
         return new AnnotatedTag(null, name, message);
     }
 
-    public static AnnotatedTag fromRef(Repository repository, Ref gitTag) throws IOException, IncorrectObjectTypeException {
+    public static AnnotatedTag fromRef(Repository repository, Ref gitTag, Boolean useBuildNumber) throws IOException, IncorrectObjectTypeException {
         Guard.notNull("gitTag", gitTag);
 
         RevWalk walk = new RevWalk(repository);
@@ -50,7 +53,9 @@ public class AnnotatedTag {
         if (message == null) {
             message = new JSONObject();
             message.put(VERSION, "0");
-            message.put(BUILD_NUMBER, "0");
+            if(useBuildNumber){
+                message.put(BUILD_NUMBER, "0");
+            }
         }
         return new AnnotatedTag(gitTag, stripRefPrefix(gitTag.getName()), message);
     }

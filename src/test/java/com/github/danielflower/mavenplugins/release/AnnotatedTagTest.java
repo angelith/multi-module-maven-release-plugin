@@ -14,7 +14,7 @@ public class AnnotatedTagTest {
     @Test
     public void gettersReturnValuesPassedIn() throws Exception {
         // yep, testing getters... but only because it isn't a simple POJO
-        AnnotatedTag tag = AnnotatedTag.create("my-name", "the-version", 2134);
+        AnnotatedTag tag = AnnotatedTag.create("my-name", "the-version", 2134, true);
         assertThat(tag.name(), equalTo("my-name"));
         assertThat(tag.version(), equalTo("the-version"));
         assertThat(tag.buildNumber(), equalTo(2134L));
@@ -23,11 +23,11 @@ public class AnnotatedTagTest {
     @Test
     public void aTagCanBeCreatedFromAGitTag() throws GitAPIException, IOException {
         TestProject project = TestProject.singleModuleProject();
-        AnnotatedTag tag = AnnotatedTag.create("my-name", "the-version", 2134);
+        AnnotatedTag tag = AnnotatedTag.create("my-name", "the-version", 2134, true);
         tag.saveAtHEAD(project.local);
 
         Ref ref = project.local.tagList().call().get(0);
-        AnnotatedTag inflatedTag = AnnotatedTag.fromRef(project.local.getRepository(), ref);
+        AnnotatedTag inflatedTag = AnnotatedTag.fromRef(project.local.getRepository(), ref, true);
         assertThat(inflatedTag.name(), equalTo("my-name"));
         assertThat(inflatedTag.version(), equalTo("the-version"));
         assertThat(inflatedTag.buildNumber(), equalTo(2134L));
@@ -39,7 +39,7 @@ public class AnnotatedTagTest {
         project.local.tag().setName("my-name-1.0.2").setAnnotated(true).setMessage("This is not json").call();
 
         Ref ref = project.local.tagList().call().get(0);
-        AnnotatedTag inflatedTag = AnnotatedTag.fromRef(project.local.getRepository(), ref);
+        AnnotatedTag inflatedTag = AnnotatedTag.fromRef(project.local.getRepository(), ref, true);
         assertThat(inflatedTag.name(), equalTo("my-name-1.0.2"));
         assertThat(inflatedTag.version(), equalTo("0"));
         assertThat(inflatedTag.buildNumber(), equalTo(0L));

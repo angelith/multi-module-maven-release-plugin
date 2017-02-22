@@ -9,7 +9,6 @@ import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
 import org.apache.maven.settings.io.DefaultSettingsWriter;
 import org.eclipse.jgit.api.errors.GitAPIException;
-import sun.security.pkcs11.Secmod;
 
 import java.io.File;
 import java.io.IOException;
@@ -105,25 +104,23 @@ public class MultiRepoReleaseMojo extends BaseMojo {
     public void execute() throws MojoExecutionException, MojoFailureException {
         Log log = getLog();
 
+        if(buildNumber != null){
+            throw new MojoExecutionException("Build  numbers are not supported in multirelease mode. Stopping execution.");
+        }
+
         try {
             configureJsch(log);
-
             List<ModuleInfo> moduleInfos = gatherModulesInfo();
-
-            MultiRepoReactor multiRepoReactor = MultiRepoReactor.fromProjects(log, project, moduleInfos, buildNumber, modulesToForceRelease, noChangesAction);
+            MultiRepoReactor multiRepoReactor = MultiRepoReactor.fromProjects(log, project, moduleInfos, modulesToForceRelease, noChangesAction);
             if (multiRepoReactor == null) {
                 return;
             }
-
-            List<AnnotatedTag> proposedTags = figureOutTagNamesAndThrowIfAlreadyExists(multiRepoReactor.getModulesInBuildOrder(), modulesToRelease, moduleInfos);
-
-            List<File> changedFiles = updatePomsAndReturnChangedFiles(log, multiRepoReactor);
-
+            figureOutTagNamesAndThrowIfAlreadyExists(multiRepoReactor.getModulesInBuildOrder(), modulesToRelease, moduleInfos);
+            updatePoms(log, multiRepoReactor);
             // Do this before running the maven build in case the build uploads some artifacts and then fails. If it is
             // not tagged in a half-failed build, then subsequent releases will re-use a version that is already in Nexus
             // and so fail. The downside is that failed builds result in tags being pushed.
             tagAndPushRepo(log, multiRepoReactor);
-
             try {
             	final MultiRepoReleaseInvoker invoker = new MultiRepoReleaseInvoker(getLog(), project);
             	invoker.setGlobalSettings(globalSettings);
@@ -144,8 +141,6 @@ public class MultiRepoReleaseMojo extends BaseMojo {
             } finally {
                 revertChanges(log, moduleInfos, false);
             }
-
-
         } catch (ValidationException e) {
             printBigErrorMessageAndThrow(log, e.getMessage(), e.getMessages());
         } catch (GitAPIException gae) {
@@ -175,7 +170,7 @@ public class MultiRepoReleaseMojo extends BaseMojo {
             gitRepo.errorIfNotClean();
             ModuleInfo moduleInfo =  new ModuleInfo();
             if(project.hasParent() && !project.getParent().getArtifactId().contains("master-pom")){
-                moduleInfo.setRelativePath(project.getParent().getArtifactId() + moduleProject.getArtifactId());
+                moduleInfo.setRelativePath(project.getParent().getArtifactId() + "/" + moduleProject.getArtifactId());
             }
             moduleInfo.setRelativePath(prefix + moduleProject.getArtifactId());
             moduleInfo.setGitRepo(gitRepo);
@@ -233,7 +228,7 @@ public class MultiRepoReleaseMojo extends BaseMojo {
         }
     }
 
-    private static List<File> updatePomsAndReturnChangedFiles(Log log, MultiRepoReactor multiRepoReactor) throws MojoExecutionException, ValidationException {
+    private void updatePoms(Log log, MultiRepoReactor multiRepoReactor) throws MojoExecutionException, ValidationException {
         MultiRepoPomUpdater pomUpdater = new MultiRepoPomUpdater(log, multiRepoReactor);
         MultiRepoPomUpdater.MultiRepoUpdateResult result = pomUpdater.updateVersion();
 
@@ -258,11 +253,9 @@ public class MultiRepoReleaseMojo extends BaseMojo {
                 throw new ValidationException(summary, messages);
             }
         }
-        return result.alteredPoms;
     }
 
-    static List<AnnotatedTag> figureOutTagNamesAndThrowIfAlreadyExists(List<ReleasableModule> modules, List<String> modulesToRelease, List<ModuleInfo> moduleInfos) throws GitAPIException, ValidationException {
-        List<AnnotatedTag> tags = new ArrayList<AnnotatedTag>();
+    private void figureOutTagNamesAndThrowIfAlreadyExists(List<ReleasableModule> modules, List<String> modulesToRelease, List<ModuleInfo> moduleInfos) throws GitAPIException, ValidationException {
         for (final ReleasableModule module : modules) {
             if (!module.willBeReleased()) {
                 continue;
@@ -278,14 +271,13 @@ public class MultiRepoReleaseMojo extends BaseMojo {
                     ));
                 }
 
-                AnnotatedTag annotatedTag = AnnotatedTag.create(tag, module.getVersion(), module.getBuildNumber());
+                AnnotatedTag annotatedTag = AnnotatedTag.create(tag, module.getVersion(), module.getBuildNumber(), false);
                 for(ModuleInfo moduleInfo: moduleInfos){
                     if(moduleInfo.getMavenProject().getArtifactId().contentEquals(module.getArtifactId())){
                         moduleInfo.setProposedTag(annotatedTag);
                         break;
                     }
                 }
-                tags.add(annotatedTag);
             }
         }
 
@@ -297,8 +289,6 @@ public class MultiRepoReleaseMojo extends BaseMojo {
                 checkTagReleaseRules(moduleInfo.getGitRepo().remoteTagsFrom(moduleInfo.getProposedTag()));
             }
         }
-
-        return tags;
     }
 
     private static void checkTagReleaseRules(List<String> matchingRemoteTags) throws ValidationException {

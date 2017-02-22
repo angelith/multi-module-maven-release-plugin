@@ -17,6 +17,8 @@ public class MultiRepoTreeWalkingDiffDetector implements DiffDetector {
 
     private final Repository repo;
 
+    public static final String HEAD = "HEAD";
+
     public MultiRepoTreeWalkingDiffDetector(Repository repo) {
         this.repo = repo;
     }
@@ -25,7 +27,7 @@ public class MultiRepoTreeWalkingDiffDetector implements DiffDetector {
         RevWalk walk = new RevWalk(repo);
         try {
             walk.setRetainBody(false);
-            walk.markStart(walk.parseCommit(repo.resolve("HEAD")));
+            walk.markStart(walk.parseCommit(repo.resolve(HEAD)));
             filterOutOtherModulesChanges(modulePath, childModules, walk);
             stopWalkingWhenTheTagsAreHit(tags, walk);
             return walk.iterator().hasNext();
@@ -49,11 +51,12 @@ public class MultiRepoTreeWalkingDiffDetector implements DiffDetector {
         treeFilters.add(TreeFilter.ANY_DIFF);
 
         if(!isRootModule){
-            modulePath = modulePath.substring(3);
+            // Remove prefix.
+            modulePath=modulePath.replace("../","");
         }
 
         if (isMultiModuleProject) {
-            // ... but ignore any sub-modules of the current sub-module, because they can change independently of the current module
+            // ignore any sub-modules of the current sub-module, because they can change independently of the current module
             for (String childModule : childModules) {
                 String path = isRootModule ? childModule : modulePath + "/" + childModule;
                 treeFilters.add(PathFilter.create(path).negate());

@@ -26,7 +26,7 @@ public class AnnotatedTagFinder {
         for (Ref tag : tags) {
             if (isPotentiallySameVersionIgnoringBuildNumber(tagWithoutBuildNumber, tag.getName())) {
                 try {
-                    results.add(AnnotatedTag.fromRef(git.getRepository(), tag));
+                    results.add(AnnotatedTag.fromRef(git.getRepository(), tag, false));
                 } catch (IncorrectObjectTypeException ignored) {
                     // not actually a tag, so skip it.
                 } catch (IOException e) {

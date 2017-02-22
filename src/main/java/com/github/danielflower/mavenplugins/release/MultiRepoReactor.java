@@ -30,28 +30,17 @@ public class MultiRepoReactor {
 
     public List<ModuleInfo> getModuleInfos() { return moduleInfos; }
 
-    public static MultiRepoReactor fromProjects(Log log, MavenProject rootProject, List<ModuleInfo> moduleInfos, Long buildNumber, List<String> modulesToForceRelease, NoChangesAction actionWhenNoChangesDetected) throws ValidationException, GitAPIException, MojoExecutionException {
+    public static MultiRepoReactor fromProjects(Log log, MavenProject rootProject, List<ModuleInfo> moduleInfos, List<String> modulesToForceRelease, NoChangesAction actionWhenNoChangesDetected) throws ValidationException, GitAPIException, MojoExecutionException {
 
         List<ReleasableModule> modules = new ArrayList<ReleasableModule>();
-        VersionNamer versionNamer = new VersionNamer();
+        VersionNamerWithoutBuildNumber versionNamer = new VersionNamerWithoutBuildNumber();
         for (ModuleInfo moduleInfo : moduleInfos) {
             DiffDetector detector = new MultiRepoTreeWalkingDiffDetector(moduleInfo.getGitRepo().git.getRepository());
             String artifactId = moduleInfo.getMavenProject().getArtifactId();
             String versionWithoutBuildNumber = moduleInfo.getMavenProject().getVersion().replace("-SNAPSHOT", "");
             List<AnnotatedTag> previousTagsForThisModule = AnnotatedTagFinder.tagsForVersion(moduleInfo.getGitRepo().git, artifactId, versionWithoutBuildNumber);
 
-
-            Collection<Long> previousBuildNumbers = new ArrayList<Long>();
-            if (previousTagsForThisModule != null) {
-                for (AnnotatedTag previousTag : previousTagsForThisModule) {
-                    previousBuildNumbers.add(previousTag.buildNumber());
-                }
-            }
-
-            Collection<Long> remoteBuildNumbers = getRemoteBuildNumbers(moduleInfo.getGitRepo(), artifactId, versionWithoutBuildNumber);
-            previousBuildNumbers.addAll(remoteBuildNumbers);
-
-            VersionName newVersion = versionNamer.name(moduleInfo.getMavenProject().getVersion(), buildNumber, previousBuildNumbers);
+            VersionName newVersion = versionNamer.name(moduleInfo.getMavenProject().getVersion());
 
             boolean oneOfTheDependenciesHasChanged = false;
             String changedDependency = null;
