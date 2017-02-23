@@ -29,12 +29,4 @@ public class VersionNameVersatile extends VersionName {
          return super.businessVersion();
      }
     }
-
-    public Boolean getUseBuildNumber() {
-        return useBuildNumber;
-    }
-
-    public void setUseBuildNumber(Boolean useBuildNumber) {
-        this.useBuildNumber = useBuildNumber;
-    }
 }
