@@ -32,13 +32,13 @@ public class MultiRepoReactor {
 
     public static MultiRepoReactor fromProjects(Log log, MavenProject rootProject, List<ModuleInfo> moduleInfos, List<String> modulesToForceRelease, NoChangesAction actionWhenNoChangesDetected) throws ValidationException, GitAPIException, MojoExecutionException {
 
-        List<ReleasableModule> modules = new ArrayList<ReleasableModule>();
+        List<ReleasableModule> modules = new ArrayList<>();
         VersionNamerWithoutBuildNumber versionNamer = new VersionNamerWithoutBuildNumber();
         for (ModuleInfo moduleInfo : moduleInfos) {
             DiffDetector detector = new MultiRepoTreeWalkingDiffDetector(moduleInfo.getGitRepo().git.getRepository());
             String artifactId = moduleInfo.getMavenProject().getArtifactId();
             String versionWithoutBuildNumber = moduleInfo.getMavenProject().getVersion().replace("-SNAPSHOT", "");
-            List<AnnotatedTag> previousTagsForThisModule = AnnotatedTagFinder.tagsForVersion(moduleInfo.getGitRepo().git, artifactId, versionWithoutBuildNumber);
+            List<AnnotatedTag> previousTagsForThisModule = AnnotatedTagFinder.tagsForVersionNoBuildNumber(moduleInfo.getGitRepo().git, artifactId, versionWithoutBuildNumber);
 
             VersionName newVersion = versionNamer.name(moduleInfo.getMavenProject().getVersion());
 
@@ -78,7 +78,7 @@ public class MultiRepoReactor {
                 }
                 AnnotatedTag previousTagThatIsTheSameAsHEADForThisModule = hasChangedSinceLastRelease(previousTagsForThisModule, detector, moduleInfo.getMavenProject(), relativePath);
                 if (previousTagThatIsTheSameAsHEADForThisModule != null) {
-                    equivalentVersion = previousTagThatIsTheSameAsHEADForThisModule.version() + "." + previousTagThatIsTheSameAsHEADForThisModule.buildNumber();
+                    equivalentVersion = previousTagThatIsTheSameAsHEADForThisModule.version();
                     log.info("Will use version " + equivalentVersion + " for " + artifactId + " as it has not been changed since that release.");
                 } else {
                     log.info("Will use version " + newVersion.releaseVersion() + " for " + artifactId + " as it has changed since the last release.");
