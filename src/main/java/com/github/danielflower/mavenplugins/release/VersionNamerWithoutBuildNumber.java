@@ -14,7 +14,7 @@ public class VersionNamerWithoutBuildNumber {
 
         String nextRelease = nextReleaseVersion(pomVersion);
 
-        VersionNameVersatile versionName = new VersionNameVersatile(nextReleaseVersion(nextRelease) + SNAPSHOT , nextRelease);
+        VersionName versionName = new VersionNameVersatile(nextReleaseVersion(nextRelease) + SNAPSHOT , nextRelease);
 
         if (!Repository.isValidRefName("refs/tags/" + versionName.releaseVersion())) {
             String summary = "Sorry, '" + versionName.releaseVersion() + "' is not a valid version.";
