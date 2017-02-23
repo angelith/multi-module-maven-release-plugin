@@ -50,6 +50,10 @@ public class ReleasableModule {
         return version.businessVersion();
     }
 
+    public String getDevelopmentVersion(){
+        return version.developmentVersion();
+    }
+
     public long getBuildNumber() {
         return version.buildNumber();
     }
