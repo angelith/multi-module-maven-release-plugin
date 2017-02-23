@@ -73,7 +73,12 @@ public class AnnotatedTag {
     }
 
     public long buildNumber() {
-        return Long.parseLong(String.valueOf(message.get(BUILD_NUMBER)));
+        if(message.get(BUILD_NUMBER) != null){
+            return Long.parseLong(String.valueOf(message.get(BUILD_NUMBER)));
+        }
+        else{
+            return 0L;
+        }
     }
 
     public Ref saveAtHEAD(Git git) throws GitAPIException {

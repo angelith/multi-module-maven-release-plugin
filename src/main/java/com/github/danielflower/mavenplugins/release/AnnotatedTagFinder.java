@@ -37,6 +37,36 @@ public class AnnotatedTagFinder {
         return results;
     }
 
+    public static List<AnnotatedTag> tagsForVersionNoBuildNumber(Git git, String module, String versionWithoutBuildNumber) throws MojoExecutionException {
+        ArrayList<AnnotatedTag> results = new ArrayList<>();
+        List<Ref> tags;
+        try {
+            tags = git.tagList().call();
+        } catch (GitAPIException e) {
+            throw new MojoExecutionException("Error while getting a list of tags in the local repo", e);
+        }
+
+        if(tags == null || tags.size() == 0){
+            return  results;
+        }
+
+        Collections.reverse(tags);
+
+        final Ref ref = tags.get(0);
+
+        if(AnnotatedTag.stripRefPrefix(ref.getName()).startsWith(module + "-"))
+        {
+            try {
+                results.add(AnnotatedTag.fromRef(git.getRepository(), ref, false));
+            } catch (IncorrectObjectTypeException ignored) {
+                // not actually a tag, so skip it.
+            } catch (IOException e) {
+                throw new MojoExecutionException("Error while looking up tag " + ref, e);
+            }
+        }
+        return results;
+    }
+
     public static boolean isPotentiallySameVersionIgnoringBuildNumber(String versionWithoutBuildNumber, String refName) {
         return buildNumberOf(versionWithoutBuildNumber, refName) != null;
     }
