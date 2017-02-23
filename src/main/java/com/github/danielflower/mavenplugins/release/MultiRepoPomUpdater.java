@@ -7,6 +7,7 @@ import org.apache.maven.model.io.xpp3.MavenXpp3Writer;
 import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.project.MavenProject;
 import org.codehaus.plexus.util.WriterFactory;
+import org.eclipse.jgit.api.errors.GitAPIException;
 
 import java.io.File;
 import java.io.Writer;
@@ -18,13 +19,20 @@ public class MultiRepoPomUpdater {
 
     private final Log log;
     private final MultiRepoReactor multiRepoReactor;
+    private boolean doCommit = false;
 
     public MultiRepoPomUpdater(Log log, MultiRepoReactor multiRepoReactor) {
         this.log = log;
         this.multiRepoReactor = multiRepoReactor;
     }
 
-    public MultiRepoUpdateResult updateVersion() {
+    public MultiRepoPomUpdater(Log log, MultiRepoReactor multiRepoReactor,boolean doCommit) {
+        this.log = log;
+        this.multiRepoReactor = multiRepoReactor;
+        this.doCommit = doCommit;
+    }
+
+    public MultiRepoUpdateResult updateVersion(boolean prepareDevPhase) {
         List<File> changedPoms = new ArrayList<File>();
         List<String> errors = new ArrayList<String>();
         for (ReleasableModule module : multiRepoReactor.getModulesInBuildOrder()) {
@@ -37,7 +45,13 @@ public class MultiRepoPomUpdater {
                     continue;
                 }
 
-                List<String> errorsForCurrentPom = alterModel(project, module.getNewVersion());
+                String versionToUse = module.getNewVersion();
+                if(prepareDevPhase){
+                    versionToUse =  module.getDevelopmentVersion();
+                    // Do not commit.
+                    this.doCommit = false;
+                }
+                List<String> errorsForCurrentPom = alterModel(project, versionToUse);
                 errors.addAll(errorsForCurrentPom);
 
                 File pom = project.getFile().getCanonicalFile();
@@ -55,12 +69,30 @@ public class MultiRepoPomUpdater {
                     pomWriter.write(fileWriter, originalModel);
                 } finally {
                     fileWriter.close();
+                    if(doCommit){
+                        commitChanges(module);
+                    }
                 }
+
             } catch (Exception e) {
                 return new MultiRepoUpdateResult(changedPoms, errors, e);
             }
         }
         return new MultiRepoUpdateResult(changedPoms, errors, null);
+    }
+
+    private void commitChanges(ReleasableModule module) throws GitAPIException {
+        // Commit everything changed.
+        module.getGit().git.add().addFilepattern(".").call();
+                    /* TODO IMPORTANT - take author from properties or in a different way.
+                            author should be that of jenkins or the one configured to the
+                            machine that will execute the release.
+                     */
+        module.getGit().git
+            .commit()
+            .setAuthor("Theodosios Angelidis", "theodossios.angelidis.ext@proximus.com")
+            .setMessage("releaser plugin - version change")
+            .call();
     }
 
     public static class MultiRepoUpdateResult {
