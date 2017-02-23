@@ -116,11 +116,12 @@ public class MultiRepoReleaseMojo extends BaseMojo {
                 return;
             }
             figureOutTagNamesAndThrowIfAlreadyExists(multiRepoReactor.getModulesInBuildOrder(), modulesToRelease, moduleInfos);
-            updatePoms(log, multiRepoReactor);
+            updatePoms(log, multiRepoReactor, false);
             // Do this before running the maven build in case the build uploads some artifacts and then fails. If it is
             // not tagged in a half-failed build, then subsequent releases will re-use a version that is already in Nexus
             // and so fail. The downside is that failed builds result in tags being pushed.
             tagAndPushRepo(log, multiRepoReactor);
+            updatePoms(log, multiRepoReactor, true);
             try {
             	final MultiRepoReleaseInvoker invoker = new MultiRepoReleaseInvoker(getLog(), project);
             	invoker.setGlobalSettings(globalSettings);
@@ -228,9 +229,9 @@ public class MultiRepoReleaseMojo extends BaseMojo {
         }
     }
 
-    private void updatePoms(Log log, MultiRepoReactor multiRepoReactor) throws MojoExecutionException, ValidationException {
-        MultiRepoPomUpdater pomUpdater = new MultiRepoPomUpdater(log, multiRepoReactor);
-        MultiRepoPomUpdater.MultiRepoUpdateResult result = pomUpdater.updateVersion();
+    private void updatePoms(Log log, MultiRepoReactor multiRepoReactor, boolean prepareDevPhase) throws MojoExecutionException, ValidationException {
+        MultiRepoPomUpdater pomUpdater = new MultiRepoPomUpdater(log, multiRepoReactor, true);
+        MultiRepoPomUpdater.MultiRepoUpdateResult result = pomUpdater.updateVersion(prepareDevPhase);
 
         if (!result.success()) {
             log.info("Going to revert changes because there was an error.");
